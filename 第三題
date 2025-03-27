@@ -1,0 +1,166 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+
+// 構造Hermite插值所需的擴展數據點
+void build_hermite_points(double t[], double d[], double v[], int n, 
+                         double z[], double fz[], double fz_deriv[]) {
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+        // 每個原始點重複兩次
+        z[2*i] = t[i];
+        z[2*i+1] = t[i];
+        fz[2*i] = d[i];
+        fz[2*i+1] = d[i];
+        fz_deriv[2*i] = v[i];
+        fz_deriv[2*i+1] = v[i];
+    }
+}
+
+// 計算Hermite差商表
+void compute_divided_differences(double z[], double fz[], double fz_deriv[], int n,
+                               double dd[]) {
+    // 初始化差商表
+    double **table = (double **)malloc(n * sizeof(double *));
+    for (int i = 0; i < n; i++) {
+        table[i] = (double *)malloc((n+1) * sizeof(double));
+    }
+
+    // 第一列是z值，第二列是fz值
+    for (int i = 0; i < n; i++) {
+        table[i][0] = z[i];
+        table[i][1] = fz[i];
+    }
+
+    // 計算差商
+    for (int j = 2; j <= n; j++) {
+        for (int i = 0; i <= n-j; i++) {
+            if (table[i][j-1] == table[i+1][j-1]) {
+                // 重複點使用導數值
+                table[i][j] = fz_deriv[i];
+            } else {
+                table[i][j] = (table[i+1][j-1] - table[i][j-1]) / 
+                              (table[i+j-1][0] - table[i][0]);
+            }
+        }
+    }
+
+    // 提取對角線元素作為最終差商
+    for (int i = 0; i < n; i++) {
+        dd[i] = table[0][i+1];
+    }
+
+    // 釋放內存
+    for (int i = 0; i < n; i++) free(table[i]);
+    free(table);
+}
+
+// 計算Hermite插值多項式在x點的值
+double hermite_interpolate(double z[], double dd[], int n, double x) {
+    double result = dd[0];
+    double product = 1.0;
+
+    for (int i = 1; i < n; i++) {
+        product *= (x - z[i-1]);
+        result += dd[i] * product;
+    }
+
+    return result;
+}
+
+// 計算Hermite插值多項式的導數在x點的值
+double hermite_derivative(double z[], double dd[], int n, double x) {
+    double result = dd[1];
+    double sum = 0.0;
+    double product;
+
+    for (int i = 2; i < n; i++) {
+        product = 1.0;
+        for (int j = 0; j < i-1; j++) {
+            product *= (x - z[j]);
+        }
+        sum += dd[i] * product;
+        
+        product = 0.0;
+        for (int k = 0; k < i-1; k++) {
+            double temp = 1.0;
+            for (int j = 0; j < i-1; j++) {
+                if (j != k) temp *= (x - z[j]);
+            }
+            product += temp;
+        }
+        result += dd[i] * product;
+    }
+
+    return result;
+}
+
+int main() {
+    // 原始數據
+    double t[] = {0, 3, 5, 8, 13};
+    double d[] = {0, 200, 375, 620, 990};
+    double v[] = {75, 77, 80, 74, 72};
+    int n = sizeof(t)/sizeof(t[0]);
+
+    // 構建Hermite插值所需的擴展數據
+    int hermite_n = 2*n;
+    double *z = (double *)malloc(hermite_n * sizeof(double));
+    double *fz = (double *)malloc(hermite_n * sizeof(double));
+    double *fz_deriv = (double *)malloc(hermite_n * sizeof(double));
+    
+    build_hermite_points(t, d, v, n, z, fz, fz_deriv);
+
+    // 計算差商
+    double *dd = (double *)malloc(hermite_n * sizeof(double));
+    compute_divided_differences(z, fz, fz_deriv, hermite_n, dd);
+
+    // a. 預測t=10s時的位置和速度
+    double ti = 10.0;
+    double position = hermite_interpolate(z, dd, hermite_n, ti);
+    double speed = hermite_derivative(z, dd, hermite_n, ti);
+    
+    printf("a. 當t=10s時:\n");
+    printf("   預測位置: %.2f 英尺\n", position);
+    printf("   預測速度: %.2f 英尺/秒 (約 %.2f 英里/小時)\n", speed, speed*3600/5280);
+
+    // b. 檢查速度限制
+    double max_speed_limit = 55 * 5280 / 3600; // 55 mph to ft/s
+    printf("\nb. 檢查是否超過55英里/小時(%.2f 英尺/秒)的速度限制:\n", max_speed_limit);
+
+    // 在每個區間內檢查極值
+    int exceeded = 0;
+    for (int i = 0; i < n-1; i++) {
+        // 簡單檢查端點速度
+        if (v[i] > max_speed_limit || v[i+1] > max_speed_limit) {
+            printf("   在時間段 %d-%d秒之間超過了速度限制\n", (int)t[i], (int)t[i+1]);
+            exceeded = 1;
+        }
+    }
+    
+    if (!exceeded) {
+        printf("   汽車從未超過55英里/小時的速度限制\n");
+    }
+
+    // c. 預測最大速度
+    double max_speed = v[0];
+    for (int i = 1; i < n; i++) {
+        if (v[i] > max_speed) max_speed = v[i];
+    }
+    
+    // 檢查插值區間內的極值
+    for (int i = 0; i < n-1; i++) {
+        double t1 = t[i], t2 = t[i+1];
+        // 可以在更密集的點上採樣尋找極值
+        for (double t_sample = t1; t_sample <= t2; t_sample += 0.1) {
+            double current_speed = hermite_derivative(z, dd, hermite_n, t_sample);
+            if (current_speed > max_speed) max_speed = current_speed;
+        }
+    }
+    
+    printf("\nc. 預測的最大速度: %.2f 英尺/秒 (約 %.2f 英里/小時)\n", 
+           max_speed, max_speed*3600/5280);
+
+    // 釋放內存
+    free(z); free(fz); free(fz_deriv); free(dd);
+    return 0;
+}
