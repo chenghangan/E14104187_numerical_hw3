@@ -1,0 +1,50 @@
+#include <stdio.h>
+#include <math.h>
+
+// 拉格朗日插值函數
+double lagrange_interp(double x[], double y[], int n, double yi) {
+    double result = 0.0;
+    for (int i = 0; i < n; i++) {
+        double term = x[i];
+        for (int j = 0; j < n; j++) {
+            if (j != i) {
+                term *= (yi - y[j]) / (y[i] - y[j]);
+            }
+        }
+        result += term;
+    }
+    return result;
+}
+
+int main() {
+    // 給定的數據點 (y = e^(-x))
+    double x[] = {0.3, 0.4, 0.5, 0.6};
+    double y[] = {0.740818, 0.670320, 0.606531, 0.548812};
+    
+    // 要求解的方程是 x - e^(-x) = 0 => e^(-x) = x
+    // 我們需要找到 y = x 的點，即 y = x
+    
+    double target = 0.0; // 初始猜測
+    double prev_target = -1.0;
+    int max_iter = 100;
+    double tolerance = 1e-6;
+    int iter = 0;
+    
+    printf("使用迭代逆插值法求解 x - e^(-x) = 0:\n");
+    
+    while (fabs(target - prev_target) > tolerance && iter < max_iter) {
+        prev_target = target;
+        
+        // 使用逆插值找到新的x估計值
+        target = lagrange_interp(y, x, 4, target);
+        
+        printf("迭代 %d: x = %.6f\n", iter+1, target);
+        iter++;
+    }
+    
+    printf("\n最終解: x ≈ %.6f\n", target);
+    printf("驗證: x - e^(-x) = %.6f - %.6f = %.6f\n", 
+           target, exp(-target), target - exp(-target));
+    
+    return 0;
+}
